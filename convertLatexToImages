@@ -1,0 +1,78 @@
+function convertLatexToImages() {
+  const doc = DocumentApp.getActiveDocument();
+  const body = doc.getBody();
+  const pattern = "\\$([^$]+)\\$";
+  let searchResult = body.findText(pattern);
+  let successCount = 0;
+  let errorCount = 0;
+
+  while (searchResult) {
+    const element = searchResult.getElement();
+
+    if (element.getType() === DocumentApp.ElementType.TEXT) {
+      const textObj = element.asText();
+      const startOffset = searchResult.getStartOffset();
+      const endOffset = searchResult.getEndOffsetInclusive();
+      const textContent = textObj.getText();
+
+      const fullMatch = textContent.substring(startOffset, endOffset + 1);
+      const formula = fullMatch.substring(1, fullMatch.length - 1).trim();
+
+      const baseUrl = "https://latex.codecogs.com/png.latex?";
+      const options = "\\dpi{200} \\bg_white ";
+      const finalUrl = baseUrl + encodeURIComponent(options + formula);
+
+      try {
+        Utilities.sleep(150);
+
+        const response = UrlFetchApp.fetch(finalUrl);
+
+        if (response.getResponseCode() === 200) {
+          const imageBlob = response.getBlob();
+          const parent = element.getParent();
+          const parentType = parent.getType();
+          let container = null;
+
+          if (parentType === DocumentApp.ElementType.PARAGRAPH) {
+            container = parent.asParagraph();
+          } else if (parentType === DocumentApp.ElementType.LIST_ITEM) {
+            container = parent.asListItem();
+          } else {
+            searchResult = body.findText(pattern, searchResult);
+            continue;
+          }
+
+          const childIndex = parent.getChildIndex(element);
+          const textBefore = textContent.substring(0, startOffset);
+          const textAfter = textContent.substring(endOffset + 1);
+
+          textObj.setText(textBefore);
+
+          const image = container.insertInlineImage(childIndex + 1, imageBlob);
+          image.setWidth(image.getWidth() * 0.5);
+          image.setHeight(image.getHeight() * 0.5);
+
+          if (textAfter.length > 0) {
+            container.insertText(childIndex + 2, textAfter);
+          }
+
+          successCount++;
+          searchResult = body.findText(pattern);
+
+        } else {
+          searchResult = body.findText(pattern, searchResult);
+        }
+
+      } catch (e) {
+        errorCount++;
+        Logger.log("Error processing: " + formula + ". Message: " + e.message);
+        searchResult = body.findText(pattern, searchResult);
+      }
+
+    } else {
+      searchResult = body.findText(pattern, searchResult);
+    }
+  }
+
+  DocumentApp.getUi().alert('Finished! Processed: ' + successCount + '. Errors: ' + errorCount);
+}
